@@ -113,3 +113,45 @@ test('valid current automatic observation is administrator-only and retains priv
   await expect(region.locator('[data-route-details]')).toContainText('2026-07-25 11:00 UTC')
   await expect(region.locator('[data-route-summary]')).not.toContainText('192.0.2.77')
 })
+
+test('automatic Atlas results fill both directions and keep IPv4 and IPv6 independent', async ({ page }) => {
+  const collectedAt = '2026-07-25T11:10:00.000Z'
+  const reading = (family: 4 | 6, direction: 'cn-to-node' | 'node-to-cn', asn: number) => ({
+    family,
+    direction,
+    carrier: 'unicom',
+    collectedAt,
+    reachedTarget: true,
+    hops: [1, 2].map(ttl => ({ ttl, asns: [asn] })),
+  })
+  await installKomariFixture(page, {
+    hideEarth: true,
+    loggedIn: true,
+    themeSettings: {
+      returnRoutesVisible: true,
+      returnRouteAutoEnabled: true,
+      returnRouteCompanionEnabled: true,
+      returnRouteConfig: doc({ manual: { unicom: { label: '旧手动回程', updatedAt: AT } }, outbound: { mobile: { label: '旧手动去程', updatedAt: AT } } }),
+    },
+  })
+  await page.route('**/api/enhanced-route-probe/v1/snapshot', route => route.fulfill({
+    json: {
+      schema: 1,
+      nodes: {},
+      atlas: { nodes: { [UUID]: [reading(4, 'cn-to-node', 4837), reading(6, 'cn-to-node', 9929), reading(6, 'node-to-cn', 10099)] } },
+    },
+  }))
+  await page.goto('/')
+  const node = card(page)
+  const routes = node.locator('[data-return-routes]')
+  await expect(routes.locator('[data-outbound-carrier="unicom"]')).toHaveText('4837')
+  await expect(routes.locator('[data-return-carrier="unicom"]')).toHaveCount(0)
+  await expect(routes).not.toContainText('旧手动去程')
+  await expect(routes.locator('[data-route-summary] time')).toHaveAttribute('datetime', collectedAt)
+  await node.getByRole('button', { name: 'IPv6', exact: true }).click()
+  await expect(routes).toHaveAttribute('data-route-family', 'ipv6')
+  await expect(routes.locator('[data-outbound-carrier="unicom"]')).toHaveText('9929')
+  await expect(routes.locator('[data-return-carrier="unicom"]')).toHaveText('10099 / CUG')
+  await routes.locator('summary').click()
+  await expect(routes.locator('[data-route-details]')).toContainText('RIPE Atlas / RIPEstat')
+})

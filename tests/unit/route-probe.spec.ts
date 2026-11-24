@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { resolveAtlasRoutes } from '../../src/utils/atlasRouteResults'
 import { resolveOutboundRoutes, resolveReturnRoutes } from '../../src/utils/returnRoutes'
 import { parseProbeSnapshot, withProbeResults } from '../../src/utils/routeProbeSnapshot'
 
@@ -19,6 +20,26 @@ function snapshot(status = 'ok', source = 'fixture') {
     }])),
   } } } }
 }
+
+test('Atlas observations keep their family, direction, ASN and original time', () => {
+  const collectedAt = new Date(NOW - 1000).toISOString()
+  const reading = (family: 4 | 6, direction: 'cn-to-node' | 'node-to-cn', asn: number) => ({
+    family,
+    direction,
+    carrier: 'unicom',
+    collectedAt,
+    reachedTarget: true,
+    hops: [1, 2].map(ttl => ({ ttl, asns: [asn] })),
+  })
+  const rows = [reading(4, 'cn-to-node', 4837), reading(6, 'cn-to-node', 9929), reading(6, 'node-to-cn', 4837)]
+  const payload = { schema: 1, nodes: {}, atlas: { nodes: { [UUID]: rows } } }
+  const atlas = parseProbeSnapshot(payload).atlas
+  expect(resolveAtlasRoutes(atlas, UUID, 'ipv6', 'cn-to-node', 24, NOW)[0]).toMatchObject({ label: '9929', at: collectedAt, source: 'auto', provider: 'ripe-atlas' })
+  expect(resolveAtlasRoutes(atlas, UUID, 'ipv6', 'node-to-cn', 24, NOW)[0]).toMatchObject({ label: '4837' })
+  expect(resolveAtlasRoutes(atlas, UUID, 'ipv4', 'node-to-cn', 24, NOW)).toEqual([])
+  expect(resolveAtlasRoutes(atlas, UUID, 'ipv4', 'cn-to-node', 1, NOW + 3600000)[0]).toMatchObject({ status: 'expired', at: collectedAt })
+  expect(() => parseProbeSnapshot({ ...payload, atlas: { nodes: { [UUID]: [rows[0], rows[0]] } } })).toThrow('duplicate')
+})
 
 test('native companion evidence is bound to UUID and marked simulated, not a live probe', () => {
   const parsed = parseProbeSnapshot(snapshot())

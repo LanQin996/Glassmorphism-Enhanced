@@ -1,6 +1,8 @@
+import type { AtlasRouteSnapshot } from '@/utils/atlasRouteResults'
 import type { ReturnCarrier } from '@/utils/returnRouteClassification'
 import type { AutoReturnRoute, ReturnRouteDisplay, ReturnRouteDocument } from '@/utils/returnRoutes'
 import type { ProbeProtocol } from '@/utils/routeProbeEvidence'
+import { parseAtlasRouteSnapshot } from '@/utils/atlasRouteResults'
 import { CDN_ID, cdnTraceFromSnapshot } from '@/utils/cdnRouteEvidence'
 import { RETURN_CARRIERS } from '@/utils/returnRouteClassification'
 import { parseReturnRouteConfig, resolveReturnRoutes } from '@/utils/returnRoutes'
@@ -16,14 +18,14 @@ export interface ProbeNode {
   auto: Partial<Record<ReturnCarrier, AutoReturnRoute>>
   protocols?: ProtocolPaths
 }
-export interface ProbeSnapshot { nodes: Record<string, ProbeNode> }
+export interface ProbeSnapshot { nodes: Record<string, ProbeNode>, atlas?: AtlasRouteSnapshot }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const UTC_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 
 export function parseProbeSnapshot(raw: unknown): ProbeSnapshot {
   if (!raw || typeof raw !== 'object')
     throw new Error('invalid companion snapshot')
-  const data = raw as { schema?: unknown, nodes?: Record<string, Record<string, unknown>> }
+  const data = raw as { schema?: unknown, nodes?: Record<string, Record<string, unknown>>, atlas?: unknown }
   if (data.schema !== 1 || !data.nodes || typeof data.nodes !== 'object' || Array.isArray(data.nodes) || Object.keys(data.nodes).length > 400)
     throw new Error('invalid companion protocol')
   const nodes: ProbeSnapshot['nodes'] = {}
@@ -90,7 +92,7 @@ export function parseProbeSnapshot(raw: unknown): ProbeSnapshot {
     }
     nodes[uuid] = { enabled: value.enabled, state: value.state.slice(0, 40), seenAt: typeof value.seenAt === 'number' && Number.isFinite(value.seenAt) ? value.seenAt : null, registeredAt: typeof value.registeredAt === 'number' && Number.isFinite(value.registeredAt) ? value.registeredAt : null, helperVersion: typeof value.helperVersion === 'string' ? value.helperVersion.slice(0, 96) : null, auto, ...(protocols ? { protocols } : {}) }
   }
-  return { nodes }
+  return { nodes, ...(data.atlas !== undefined ? { atlas: parseAtlasRouteSnapshot(data.atlas) } : {}) }
 }
 
 export function withProbeResults(document: ReturnRouteDocument, uuid: string, snapshot: ProbeSnapshot): ReturnRouteDocument {

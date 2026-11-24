@@ -57,7 +57,7 @@ function keys(value, allowed) {
   assert(Object.keys(value).every(key => allowed.includes(key)), 'unexpected fields')
 }
 function policy(raw) {
-  keys(raw, ['enabled', 'nodes', 'cdnTargets'])
+  keys(raw, ['enabled', 'nodes', 'cdnTargets', 'atlasMeasurements'])
   const cdnTargets = cdnProfiles(raw.cdnTargets)
   const nodes = typeof raw.nodes === 'string' ? JSON.parse(raw.nodes) : raw.nodes || {}
   assert(Object.keys(nodes).length <= 200, 'too many nodes')
@@ -69,7 +69,7 @@ function policy(raw) {
     assert(typeof item.enabled === 'boolean' && (CITIES.includes(item.city) || Object.hasOwn(cdnTargets, item.city)), 'invalid node policy')
     assert(Number.isInteger(item.periodMinutes) && item.periodMinutes >= 60 && item.periodMinutes <= 10080, 'period must be 60–10080 minutes')
   }
-  return { enabled: raw.enabled === true, nodes, ...(raw.cdnTargets !== undefined ? { cdnTargets } : {}) }
+  return { enabled: raw.enabled === true, nodes, ...(raw.cdnTargets !== undefined ? { cdnTargets } : {}), ...(raw.atlasMeasurements !== undefined ? { atlasMeasurements: raw.atlasMeasurements } : {}) }
 }
 function normalizeResult(result, uuid, city, now) {
   if (result && [2, 3].includes(result.schema))

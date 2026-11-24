@@ -1,5 +1,11 @@
 # AI Cache / Agent Handoff Log
 
+## Fork · 自动三网线路（M5/M3）
+
+- 在节点卡片分支接入 RIPE Atlas 持续 Traceroute 与 RIPEstat ASN。伴生插件按 UUID、地址族、方向和运营商绑定结果，用原始测量时间，管理员主题读取精简 ASN 快照。
+- 自动读取部署需要实际 Atlas 测量 ID 和对应源探针。配置说明在 `docs/return-routes.md`。
+- 已通过 24 项伴生协议、257 项单元和 150 项 Chromium 测试。公开 IPv6 测量采集验证返回 1 条绑定记录和 9 个有 ASN 的跳点。Windows 不具备 POSIX 文件模式与 `fcntl` 测试环境。
+
 ## LanQin996 fork · 节点卡片改造（M4/M5）
 
 - 基于 `bb4a96a` 在 `codex/server-card-redesign` 开发。三网 Ping、去程、回程跟随卡片的 IPv4/IPv6 选择。手动管理按节点和协议编辑，两套标签一次提交。

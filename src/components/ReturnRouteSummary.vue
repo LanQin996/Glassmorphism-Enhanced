@@ -18,7 +18,7 @@ const routeRows = computed(() => RETURN_CARRIERS.map(carrier => ({
   outbound: props.outbound.find(entry => entry.carrier === carrier),
   inbound: props.entries.find(entry => entry.carrier === carrier),
 })))
-const lastTest = computed(() => props.entries.flatMap(entry => entry.source === 'auto' && entry.at ? [entry.at] : []).sort().at(-1))
+const lastTest = computed(() => [...props.entries, ...props.outbound].flatMap(entry => entry.source === 'auto' && entry.at ? [entry.at] : []).sort().at(-1))
 const hasManual = computed(() => props.outbound.length > 0 || props.entries.some(entry => entry.source === 'manual'))
 </script>
 
@@ -48,6 +48,7 @@ const hasManual = computed(() => props.outbound.length > 0 || props.entries.some
         <span
           role="cell"
           :data-outbound-carrier="row.outbound ? row.carrier : undefined"
+          :data-route-status="row.outbound?.status"
           :title="row.outbound?.label"
           class="min-w-0 content-center rounded-md px-1 py-0.5 text-center font-semibold [overflow-wrap:anywhere]"
           :class="row.outbound ? 'bg-emerald-500/12 text-emerald-800 dark:text-emerald-300' : 'bg-foreground/4 text-muted-foreground'"

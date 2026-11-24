@@ -36,6 +36,7 @@ export interface ReturnRouteDisplay {
   label: string
   status: 'manual' | 'fresh-auto' | 'unknown' | 'expired' | 'not-detected' | 'failed'
   source: 'manual' | 'auto' | 'fixture' | 'replay' | null
+  provider?: 'ripe-atlas'
   at: string | null
   detail: string
 }

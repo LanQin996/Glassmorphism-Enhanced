@@ -53,8 +53,8 @@
 
       { "name": "03 · 线路与延迟", "type": "title" },
       { "key": "returnRoutesVisible", "name": "显示回程线路", "type": "switch", "default": false, "help": "手动线路只需本主题，无需 Plugin、Helper 或远程执行。在卡片及详情显示三等分线路摘要；无有效结果整块隐藏，不从 Ping 延迟推断，不修改节点 tags。" },
-      { "key": "returnRouteAutoEnabled", "name": "消费已采集的自动结果", "type": "switch", "default": false, "help": "可选增强，默认关闭。只消费已有证据，不会开启远控或从浏览器启动 traceroute；生产实时自动探测尚未通过验收。" },
-      { "key": "returnRouteCompanionEnabled", "name": "连接 Enhanced 回程伴生插件（管理员）", "type": "switch", "default": false, "help": "仅可选自动链路需要：Plugin 在 Komari 服务端安装一次，Helper 只在自愿参与探测的节点本地授权安装。手动线路不依赖这些组件；本页面不安装软件或开启远控，私有结果仅管理员读取。" },
+      { "key": "returnRouteAutoEnabled", "name": "消费已采集的自动结果", "type": "switch", "default": false, "help": "显示逐跳证据识别出的去程、回程和原始测试时间。IPv4 与 IPv6 分开读取，过期或证据不足的线路留空。" },
+      { "key": "returnRouteCompanionEnabled", "name": "连接 Enhanced 回程伴生插件（管理员）", "type": "switch", "default": false, "help": "在 Komari 服务端启用 enhanced-route-probe 后，在插件设置绑定公开 RIPE Atlas 持续测量。自动结果仅管理员可见。" },
       { "key": "returnRouteTtlHours", "name": "自动结果有效期（小时）", "type": "number", "default": 24, "help": "1–168 小时，过期自动结果在摘要隐藏，仅管理员详情保留状态，不以旧结果冒充当前线路。手动覆盖不参与自动 TTL。" },
       { "key": "returnRouteConfig", "name": "按节点 UUID 配置三网回程 JSON", "type": "richtext", "default": "{\"version\":1,\"nodes\":{}}", "help": "推荐使用主页 Enhanced 管理 → 线路与延迟 → 手动线路的节点选择和三个输入框；无需 Plugin。此高级 JSON 与可视化界面使用同一托管字段，兼容原 version/nodes/manual 结构。公开显示数据，严禁写入 token、密码或私有逐跳 IP。" },
       { "key": "transitCarrierPingEnabled", "name": "启用中转三网延迟估算", "type": "switch", "default": false, "help": "开启后，仅对中转规则中匹配的节点使用中转三网估算；其他节点继续使用自身 Ping 数据。" },

@@ -76,7 +76,7 @@ def main():
     # version. This is a test artifact, never an official released binary.
     legacy_commit = '37092754388f04d44a3131a4f51130b8b6a1abae'
     with zipfile.ZipFile(output / 'legacy-plugin-source-fixture.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for name in ('komari-plugin.json', 'script.js', 'protocol.cjs', 'storage.cjs', 'request-limits.cjs', 'LICENSE'):
+        for name in ('komari-plugin.json', 'script.js', 'protocol.cjs', 'storage.cjs', 'request-limits.cjs', 'atlas.cjs', 'LICENSE'):
             archive.writestr(name, subprocess.check_output(['git', 'show', f'{legacy_commit}:companion/enhanced-route-probe/{name}'], cwd=ROOT))
         archive.writestr('BUILD.json', json.dumps({'commit': legacy_commit, 'dirty': False, 'kind': 'historical-source-test-fixture', 'version': '0.1.0', 'note': 'Built from historical source for isolated upgrade tests; NOT an official binary'}))
     # Retain the 0.1 source upgrade fixture above. For the later stable-release
@@ -84,7 +84,7 @@ def main():
     # downgrade of 0.3 registration policies into pre-registration 0.1 code.
     stable_commit = subprocess.check_output(['git', 'rev-parse', 'refs/tags/v1.2.0^{}'], cwd=ROOT, text=True).strip()
     with zipfile.ZipFile(output / 'v120-plugin-source-fixture.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for name in ('komari-plugin.json', 'script.js', 'protocol.cjs', 'storage.cjs', 'request-limits.cjs', 'LICENSE'):
+        for name in ('komari-plugin.json', 'script.js', 'protocol.cjs', 'storage.cjs', 'request-limits.cjs', 'atlas.cjs', 'LICENSE'):
             archive.writestr(name, subprocess.check_output(['git', 'show', f'{stable_commit}:companion/enhanced-route-probe/{name}'], cwd=ROOT))
         archive.writestr('BUILD.json', json.dumps({'commit': stable_commit, 'dirty': False, 'kind': 'historical-source-test-fixture', 'version': '0.2.0', 'note': 'Actual v1.2.0 tagged plugin source; NOT an official binary'}))
     reload_fault_bundle(bundle, output / 'reload-fault-full')

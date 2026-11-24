@@ -6,6 +6,7 @@ const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const server = require('server')
+const { createAtlasCollector, POLL_MS } = require('./atlas.cjs')
 const manifest = require('./komari-plugin.json')
 const { Coordinator, policy, keys, UUID } = require('./protocol.cjs')
 const { ClientRequestLimiter } = require('./request-limits.cjs')
@@ -16,6 +17,19 @@ const coordinator = new Coordinator(() => crypto.randomBytes(24).toString('hex')
 const limiter = new ClientRequestLimiter()
 const storage = new Store(fs, path, typeof __storageDir__ === 'string' ? __storageDir__ : '', coordinator)
 storage.restore()
+const atlas = createAtlasCollector((url, options) => fetch(url, options))
+const atlasLifetime = new AbortController()
+let atlasTimer
+
+async function refreshAtlas() {
+  try {
+    const raw = await server.getConfig()
+    await atlas.refresh(raw.atlasMeasurements, atlasLifetime.signal)
+  }
+  catch {
+    // Keep existing measurements until their original timestamps expire.
+  }
+}
 
 function json(res, status, data) {
   res.statusCode = status
@@ -68,7 +82,13 @@ function route(method, name, isAdmin, handler) {
   })
 }
 function load() {
-  route('GET', 'snapshot', true, (_req, _uuid, config) => coordinator.snapshot(config))
+  route('GET', 'snapshot', true, (_req, _uuid, config) => {
+    const snapshot = coordinator.snapshot(config)
+    const atlasSnapshot = atlas.snapshot(config.atlasMeasurements)
+    if (atlasSnapshot.error || Object.keys(atlasSnapshot.nodes).length)
+      snapshot.atlas = atlasSnapshot
+    return snapshot
+  })
   route('GET', 'health', true, () => ({ schema: 1, version: manifest.version, storage: storage.healthy ? 'healthy' : 'unavailable', readAccess: 'admin-only' }))
   // Private installer checkpoint: contains short-lived leases, never request it
   // from the public theme or log it. Restore is bounded and requires policy OFF.
@@ -97,6 +117,12 @@ function load() {
     return coordinator.poll(uuid, config, data.helper_version)
   })
   route('POST', 'result', false, (req, uuid, config) => coordinator.submit(uuid, body(req), config))
+  void refreshAtlas()
+  atlasTimer = setInterval(() => void refreshAtlas(), POLL_MS)
 }
 globalThis.load = load
-globalThis.unload = () => storage.save()
+globalThis.unload = () => {
+  clearInterval(atlasTimer)
+  atlasLifetime.abort()
+  storage.save()
+}

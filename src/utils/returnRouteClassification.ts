@@ -40,7 +40,7 @@ const BACKBONES: Record<ReturnCarrier, Record<number, string>> = {
   mobile: { 9808: 'CMNET', 58453: 'CMI', 58807: 'CMIN2' },
 }
 
-export function classifyReturnRoute(carrier: ReturnCarrier, hops: readonly ReturnHop[], reachedTarget: boolean): RouteClassification {
+export function classifyReturnRoute(carrier: ReturnCarrier, hops: readonly ReturnHop[], reachedTarget: boolean, options?: { allowObservedWithGaps?: boolean }): RouteClassification {
   const ordered = [...hops].sort((a, b) => a.ttl - b.ttl)
   const names: Record<number, string> = { ...BACKBONES.telecom, ...BACKBONES.unicom, ...BACKBONES.mobile }
   const matches = ordered.filter(hop => hop.asns.some(asn => BACKBONES[carrier][asn]))
@@ -68,6 +68,8 @@ export function classifyReturnRoute(carrier: ReturnCarrier, hops: readonly Retur
   if (carrier === 'telecom' && segments.length === 2 && segments[0] === 4134 && segments[1] === 4809)
     return { label: `CN2 GT 候选 / 163 混合${hidden ? '（疑似，隐藏跳）' : ''}`, confidence: 'mixed', evidence }
   if (carrier === 'telecom' && segments.length === 1 && segments[0] === 4809) {
+    if (options?.allowObservedWithGaps)
+      return { label: 'CN2（已见）', confidence: 'observed', evidence }
     const ips = matches.flatMap(h => h.ips ?? [])
     if (hidden || (ips.length > 0 && new Set(ips).size < 2))
       return uncertain('CN2（不确定）')
@@ -75,5 +77,8 @@ export function classifyReturnRoute(carrier: ReturnCarrier, hops: readonly Retur
   }
   if (segments.length > 1)
     return { label: `${segments.map(n => names[n] === '10099 / CUG' ? '10099' : names[n]).join(' → ')} 混合${hidden ? '（疑似，隐藏跳）' : ''}`, confidence: 'mixed', evidence }
-  return hidden ? uncertain(`${names[segments[0]!] ?? '未知'}（不确定，隐藏跳）`) : { label: names[segments[0]!] ?? '未知', confidence: 'observed', evidence }
+  const label = names[segments[0]!] ?? '未知'
+  if (hidden && !options?.allowObservedWithGaps)
+    return uncertain(`${label}（不确定，隐藏跳）`)
+  return { label: hidden ? `${label}（已见）` : label, confidence: 'observed', evidence }
 }
