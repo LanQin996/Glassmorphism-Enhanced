@@ -243,6 +243,7 @@ export interface PingTaskInfo {
   loss: number
   default_on?: boolean
   clients?: string[]
+  target?: string
   p99?: number
   p50?: number
   p99_p50_ratio?: number

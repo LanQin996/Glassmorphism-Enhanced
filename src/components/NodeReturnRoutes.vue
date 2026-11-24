@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import type { PingAddressFamily } from '@/utils/carrierPing'
+import { computed, ref } from 'vue'
 import ProtocolRouteEvidence from '@/components/ProtocolRouteEvidence.vue'
 import ReturnRouteSummary from '@/components/ReturnRouteSummary.vue'
 import { useNodeReturnRoutes } from '@/composables/useNodeReturnRoutes'
@@ -7,22 +8,53 @@ import { useAppStore } from '@/stores/app'
 import { RETURN_CARRIER_NAMES } from '@/utils/returnRouteClassification'
 import { returnRouteTime, summaryReturnRoutes } from '@/utils/returnRouteDisplay'
 
-const props = defineProps<{ uuid: string }>()
+const props = defineProps<{
+  uuid: string
+  directional?: boolean
+  family?: PingAddressFamily
+  nodeIPv4?: boolean
+  nodeIPv6?: boolean
+}>()
 const app = useAppStore()
-const { entries, visible, companionStatus, rawEvidence, protocolEvidence } = useNodeReturnRoutes(() => props.uuid)
+const selectedFamily = ref<PingAddressFamily>('ipv4')
+const canSelectFamily = computed(() => !props.family && props.nodeIPv4 === props.nodeIPv6
+  && Boolean(app.returnRouteConfig.document.nodes[props.uuid]?.ipv6))
+const family = computed<PingAddressFamily>(() => {
+  if (props.family)
+    return props.family
+  if (props.nodeIPv6 && !props.nodeIPv4)
+    return 'ipv6'
+  return canSelectFamily.value ? selectedFamily.value : 'ipv4'
+})
+const { entries, outboundEntries, visible, companionStatus, rawEvidence, protocolEvidence } = useNodeReturnRoutes(() => props.uuid, family)
 const canInspect = computed(() => app.privateFeaturesAllowed)
 const current = computed(() => summaryReturnRoutes(entries.value, canInspect.value))
+const outbound = computed(() => summaryReturnRoutes(outboundEntries.value, false))
+const hasRoutes = computed(() => current.value.length > 0 || outbound.value.length > 0)
+const showDirections = computed(() => props.directional || canSelectFamily.value || family.value === 'ipv6' || outbound.value.length > 0)
 const sourceNames = { manual: '手动', auto: '自动', fixture: '模拟', replay: '历史实测回放' }
 </script>
 
 <template>
-  <section v-if="visible && current.length" data-return-routes :data-route-node="uuid" aria-label="线路信息" class="@container/route min-w-0" @click.stop @keydown.stop>
-    <details v-if="canInspect" class="group/routes min-w-0">
+  <section v-if="visible && (hasRoutes || canSelectFamily)" data-return-routes :data-route-node="uuid" :data-route-family="family" aria-label="线路信息" class="@container/route min-w-0" @click.stop @keydown.stop>
+    <label v-if="canSelectFamily" class="mb-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+      <span>{{ app.lang === 'zh-CN' ? '线路协议' : 'Route protocol' }}</span>
+      <select v-model="selectedFamily" class="rounded-md border border-border bg-card px-2 py-1">
+        <option value="ipv4">IPv4</option>
+        <option value="ipv6">IPv6</option>
+      </select>
+    </label>
+    <details v-if="hasRoutes && canInspect" class="group/routes min-w-0">
       <summary aria-label="查看线路详情" class="block cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-        <ReturnRouteSummary :entries="current" />
+        <ReturnRouteSummary :entries="current" :outbound="outbound" :directional="showDirections" />
       </summary>
       <div class="mt-2 space-y-2 rounded-md border border-border/50 bg-slate-500/5 p-2 text-[10px] text-muted-foreground" data-route-details>
-        <p>线路观测 · 节点 → 国内三网；手动标注与观测均不是商业线路认证。未知、失败、过期与模拟仅在此处或管理后台显示。</p>
+        <p v-if="family === 'ipv4'">
+          IPv4 回程观测 · 节点 → 国内三网
+        </p>
+        <p v-else>
+          IPv6 回程 · 管理员手动标注
+        </p>
         <p v-if="companionStatus" data-companion-status>
           {{ companionStatus }}
         </p>
@@ -34,6 +66,9 @@ const sourceNames = { manual: '手动', auto: '自动', fixture: '模拟', repla
         <ProtocolRouteEvidence :uuid="uuid" :routes="protocolEvidence" />
       </div>
     </details>
-    <ReturnRouteSummary v-else :entries="current" />
+    <ReturnRouteSummary v-else-if="hasRoutes" :entries="current" :outbound="outbound" :directional="showDirections" />
+    <p v-else class="text-xs text-muted-foreground">
+      {{ app.lang === 'zh-CN' ? '暂无该协议的线路记录' : 'No routes for this protocol' }}
+    </p>
   </section>
 </template>

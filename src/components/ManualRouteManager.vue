@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PingAddressFamily } from '@/utils/carrierPing'
 import type { NodeReturnRoutes } from '@/utils/returnRoutes'
 import { computed, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -7,11 +8,13 @@ import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { stableValue } from '@/utils/enhancedManagement'
 import { manualValues } from '@/utils/manualRouteSettings'
+import { RETURN_CARRIER_NAMES, RETURN_CARRIERS } from '@/utils/returnRouteClassification'
 
 const app = useAppStore()
 const nodes = useNodesStore()
 const selected = ref('')
-const labels = ref(manualValues(undefined))
+const family = ref<PingAddressFamily>('ipv4')
+const drafts = ref(routeDrafts(undefined))
 const expected = ref<NodeReturnRoutes>()
 const busy = ref(false)
 const error = ref('')
@@ -24,10 +27,16 @@ const choices = computed(() => {
   }
   return Array.from(all, ([uuid, name]) => ({ uuid, name }))
 })
+function routeDrafts(row: NodeReturnRoutes | undefined) {
+  return {
+    ipv4: { manual: manualValues(row), outbound: manualValues(row, 'outbound') },
+    ipv6: { manual: manualValues(row, 'manual', 'ipv6'), outbound: manualValues(row, 'outbound', 'ipv6') },
+  }
+}
 function hydrate() {
   const row = app.returnRouteConfig.document.nodes[selected.value]
   expected.value = row ? JSON.parse(JSON.stringify(row)) : undefined
-  labels.value = manualValues(row)
+  drafts.value = routeDrafts(row)
 }
 async function reload() {
   busy.value = true
@@ -49,9 +58,9 @@ async function save() {
   error.value = ''
   notice.value = ''
   try {
-    app.publicSettings = await saveManualRoutes(selected.value, labels.value, expected.value)
+    app.publicSettings = await saveManualRoutes(selected.value, drafts.value, expected.value)
     hydrate()
-    notice.value = '手动线路已保存并读回；其他节点、自动结果和所有开关保持原样。'
+    notice.value = '手动线路已保存并读回。'
   }
   catch (cause) {
     error.value = cause instanceof Error ? cause.message : '保存失败'
@@ -59,12 +68,14 @@ async function save() {
   finally { busy.value = false }
 }
 watch(selected, () => {
+  family.value = 'ipv4'
   notice.value = ''
   hydrate()
 })
 watch(() => app.returnRouteConfig.document.nodes[selected.value], () => {
-  if (stableValue(labels.value) === stableValue(manualValues(expected.value)))
+  if (stableValue(drafts.value) === stableValue(routeDrafts(expected.value))) {
     hydrate()
+  }
 })
 onMounted(() => void reload())
 </script>
@@ -84,11 +95,33 @@ onMounted(() => void reload())
       暂无可管理节点。
     </p>
     <form v-else class="space-y-3" @submit.prevent="save">
-      <div class="grid gap-3 sm:grid-cols-3">
-        <label v-for="carrier in (['unicom', 'telecom', 'mobile'] as const)" :key="carrier" class="space-y-1 text-sm"><span>{{ { unicom: '联通', telecom: '电信', mobile: '移动' }[carrier] }}手动线路</span><input v-model="labels[carrier]" :aria-label="`${{ unicom: '联通', telecom: '电信', mobile: '移动' }[carrier]}手动线路`" :disabled="busy" maxlength="80" class="h-10 w-full rounded-md border border-border bg-background px-2"></label>
-      </div>
+      <label class="flex items-center gap-2 text-sm">
+        <span>线路协议</span>
+        <select v-model="family" aria-label="线路协议" :disabled="busy" class="h-8 rounded-md border border-border bg-background px-2">
+          <option value="ipv4">IPv4</option>
+          <option value="ipv6">IPv6</option>
+        </select>
+      </label>
+      <fieldset class="grid min-w-0 gap-3 sm:grid-cols-3">
+        <legend class="mb-2 text-sm font-medium">
+          去程（国内 → 节点）
+        </legend>
+        <label v-for="carrier in RETURN_CARRIERS" :key="carrier" class="space-y-1 text-sm">
+          <span>{{ RETURN_CARRIER_NAMES[carrier] }}</span>
+          <input v-model="drafts[family].outbound[carrier]" :aria-label="`${RETURN_CARRIER_NAMES[carrier]}去程线路`" :disabled="busy" maxlength="80" class="h-10 w-full rounded-md border border-border bg-background px-2">
+        </label>
+      </fieldset>
+      <fieldset class="grid min-w-0 gap-3 sm:grid-cols-3">
+        <legend class="mb-2 text-sm font-medium">
+          回程（节点 → 国内）
+        </legend>
+        <label v-for="carrier in RETURN_CARRIERS" :key="carrier" class="space-y-1 text-sm">
+          <span>{{ RETURN_CARRIER_NAMES[carrier] }}</span>
+          <input v-model="drafts[family].manual[carrier]" :aria-label="`${RETURN_CARRIER_NAMES[carrier]}手动线路`" :disabled="busy" maxlength="80" class="h-10 w-full rounded-md border border-border bg-background px-2">
+        </label>
+      </fieldset>
       <p class="text-xs text-muted-foreground">
-        留空只移除本节点对应手动覆盖；名称不推断商业线路。显示由下方「显示回程线路」开关控制，自动结果开关与手动线路互不绑定。
+        两个协议各自保存去程和回程。留空会移除该协议、该方向的手动标注。
       </p>
       <div class="flex flex-wrap gap-2">
         <Button type="submit" :disabled="busy || !selected || Boolean(app.returnRouteConfig.error)">

@@ -64,21 +64,9 @@ const NODE_METRIC_ICONS = {
 
 const isMiniNodeCard = computed(() => appStore.nodeCardSize === 'mini')
 const nodeCardXSize = computed(() => appStore.nodeCardSize === 'large' ? 'large' : 'medium')
-const nodeCardContentClass = computed(() => appStore.nodeCardSize === 'large' ? 'gap-4' : isMiniNodeCard.value ? 'gap-2' : 'gap-3')
-const nodeCardContentPaddingClass = computed(() => isMiniNodeCard.value ? 'pb-2' : '')
-const nodeCardMetricGridClass = 'grid-cols-3'
-const nodeCardMetricBoxClass = computed(() => isMiniNodeCard.value
-  ? 'px-1 py-1'
-  : appStore.nodeCardSize === 'compact' ? 'px-1.5 py-1.5' : 'px-2 py-1.5')
-const nodeCardCarrierPingPanelClass = computed(() => {
-  if (appStore.nodeCardSize === 'large')
-    return 'h-[128px] gap-2 p-2'
-  if (appStore.nodeCardSize === 'comfortable')
-    return 'h-[120px] gap-1.5 p-2'
-  if (isMiniNodeCard.value)
-    return 'h-[92px] gap-1 p-1'
-  return 'h-[112px] gap-1.5 p-1.5'
-})
+const nodeCardContentClass = computed(() => isMiniNodeCard.value ? 'gap-2.5' : 'gap-4')
+const pingMetrics = ['latency', 'loss'] as const
+const carrierOrder = ['telecom', 'unicom', 'mobile'] as const
 
 const formatBytes = (bytes: number) => formatBytesWithConfig(bytes, appStore.byteDecimals)
 const formatBytesPerSecond = (bytes: number) => formatBytesPerSecondWithConfig(bytes, appStore.byteDecimals)
@@ -104,10 +92,13 @@ const { isSupported } = useIntersectionObserver(
   },
   { rootMargin: '200px 0px' },
 )
-const { carrierDisplays, isTransit } = useNodeCarrierPingSource(
+const { carrierDisplays, isTransit, family, families, selectedFamily } = useNodeCarrierPingSource(
   () => props.node,
   () => props.pingEnabled && (!isSupported.value || pingVisible.value),
 )
+const carrierRows = computed(() => [...carrierDisplays.value].sort(
+  (left, right) => carrierOrder.indexOf(left.key) - carrierOrder.indexOf(right.key),
+))
 
 const { used: trafficUsed, percentage, remaining: trafficRemaining, label: trafficLabel, up: trafficUp, down: trafficDown, available: trafficReady, basis: trafficBasis } = useNodeTraffic(() => props.node)
 const trafficUsedPercentage = computed(() => percentage.value ?? 0)
@@ -169,11 +160,11 @@ const priceText = computed(() => {
 // 第三列：剩余天数（始终） + 剩余价值（仅在允许显示金额时），带图标与相邻列对齐
 const remainingInfoTags = computed<RemainingInfoTag[]>(() => {
   const node = props.node
-  if (node.price === 0)
-    return []
   const lang = appStore.lang
   const days = getDaysUntilExpired(node.expired_at)
   const status = getExpireStatus(node.expired_at)
+  if (node.price === 0 && status === 'unknown')
+    return []
   const items: RemainingInfoTag[] = []
   const expiryClass = status === 'expired' || status === 'critical'
     ? 'text-destructive'
@@ -195,7 +186,7 @@ const remainingInfoTags = computed<RemainingInfoTag[]>(() => {
     items.push({ icon: 'tabler:calendar-stats', prefix: 'left', value: String(days), unit: 'days', className: expiryClass })
   }
 
-  if (showPrice.value) {
+  if (node.price !== 0 && showPrice.value) {
     const text = isFreePrice(node.price)
       ? lang === 'zh-CN' ? '无' : 'N/A'
       : formatCurrencyValue(getRemainingValue(node.price, node.billing_cycle, node.expired_at), node.currency)
@@ -218,14 +209,15 @@ function hasRegion(region: string | null | undefined): boolean {
     ref="pingRoot"
     hoverable
     :size="nodeCardXSize"
-    :content-class="nodeCardContentPaddingClass"
-    class="node-card w-full cursor-pointer border-none shadow-[0_0_0_3px] shadow-transparent transition-all duration-200 rounded-xl"
+    :header-class="isMiniNodeCard ? 'px-3 pb-2' : 'pb-2'"
+    :content-class="isMiniNodeCard ? 'px-3 pb-3' : 'pb-5'"
+    class="node-card w-full cursor-pointer rounded-2xl border-border/35 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     :class="[!props.node.online && '!shadow-destructive/30']"
     role="button"
     tabindex="0"
     :aria-label="`查看节点 ${props.node.name} 详情`"
     @click="emit('click')"
-    @keydown="handleKeyboardOpen"
+    @keydown.self="handleKeyboardOpen"
   >
     <!-- 头部：在线点 + 名称 -->
     <template #header>
@@ -237,11 +229,11 @@ function hasRegion(region: string | null | undefined): boolean {
           />
           <span
             v-if="!props.reduceMotion"
-            class="animate-ping absolute inset-0 rounded-full opacity-60"
+            class="absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden"
             :class="props.node.online ? 'bg-success' : 'bg-destructive'"
           />
         </div>
-        <span class="text-sm font-bold flex-1 min-w-0 truncate">{{ props.node.name }}</span>
+        <span class="min-w-0 flex-1 truncate text-sm font-bold sm:text-[15px]">{{ props.node.name }}</span>
         <DataTooltip
           v-if="nodeMessage"
           :content="nodeMessageTooltip"
@@ -282,7 +274,7 @@ function hasRegion(region: string | null | undefined): boolean {
     <template #default>
       <div class="flex flex-col relative" :class="nodeCardContentClass">
         <!-- 在线天数固定展示，价格独立展示，避免不同主机卡片高度不一致 -->
-        <div data-node-header-meta class="relative z-20 -mt-1 flex min-w-0 items-start justify-between gap-2">
+        <div data-node-header-meta class="relative z-20 flex min-w-0 items-start justify-between gap-2">
           <div class="flex min-w-0 max-w-[60%] flex-wrap items-center gap-1.5">
             <span class="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-slate-500/10 text-muted-foreground leading-tight">
               {{ uptimeDaysText }}
@@ -419,9 +411,9 @@ function hasRegion(region: string | null | undefined): boolean {
         </div>
 
         <!-- 三列：网速 / 总流量 / 剩余天数+价格或负载 -->
-        <div class="grid gap-1.5" :class="nodeCardMetricGridClass">
+        <div class="grid grid-cols-3 gap-1.5">
           <!-- 实时网速 -->
-          <div class="flex flex-col gap-0.5 rounded-lg bg-slate-500/5 min-w-0 overflow-hidden" :class="nodeCardMetricBoxClass">
+          <div class="flex min-w-0 flex-col gap-0.5">
             <div class="text-[11px] text-success flex items-center gap-1">
               <Icon icon="tabler:chevron-up" width="11" height="11" />
               <span class="truncate min-w-0 overflow-hidden">{{ formatBytesPerSecond(props.node.net_out ?? 0) }}</span>
@@ -433,7 +425,7 @@ function hasRegion(region: string | null | undefined): boolean {
           </div>
 
           <!-- 总流量 -->
-          <div class="flex flex-col gap-0.5 rounded-lg bg-slate-500/5 min-w-0 overflow-hidden" :class="nodeCardMetricBoxClass">
+          <div class="flex min-w-0 flex-col gap-0.5">
             <div class="text-[11px] text-muted-foreground flex items-center gap-1" data-machine-direction="up">
               <Icon icon="tabler:upload" width="11" height="11" />
               <span class="truncate min-w-0 overflow-hidden">{{ trafficUp === null ? '—' : formatBytes(trafficUp ?? 0) }}</span>
@@ -445,7 +437,7 @@ function hasRegion(region: string | null | undefined): boolean {
           </div>
 
           <!-- 第三列：有价格显示剩余天数+价格，否则显示负载 -->
-          <div class="flex flex-col gap-0.5 rounded-lg bg-slate-500/5 min-w-0 overflow-hidden" :class="nodeCardMetricBoxClass">
+          <div class="flex min-w-0 flex-col gap-0.5">
             <template v-if="remainingInfoTags.length">
               <div
                 v-for="(item, i) in remainingInfoTags" :key="i"
@@ -461,7 +453,7 @@ function hasRegion(region: string | null | undefined): boolean {
                 </template>
               </div>
             </template>
-            <template v-else>
+            <template v-else-if="isMiniNodeCard">
               <div class="text-[11px] text-muted-foreground truncate">
                 {{ (props.node.load ?? 0).toFixed(2) }}
               </div>
@@ -472,101 +464,65 @@ function hasRegion(region: string | null | undefined): boolean {
           </div>
         </div>
 
-        <!-- 联通 / 电信 / 移动三网延迟 + 丢包 -->
-        <div class="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            data-node-ping-bars="latency"
-            class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
-            :class="[nodeCardCarrierPingPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
-            :aria-label="`${props.node.name} 三网延迟监测`"
-            @click.stop="emit('pingClick')"
-          >
-            <div class="flex items-center justify-between text-[11px] leading-none">
-              <span class="text-muted-foreground">延迟</span>
-              <span class="text-[10px] text-muted-foreground/70">{{ isTransit ? (appStore.lang === 'zh-CN' ? '中转估算' : 'Transit estimate') : '三网' }}</span>
-            </div>
-
-            <div class="grid min-h-0 flex-1 grid-rows-3 gap-1">
-              <div
-                v-for="carrier in carrierDisplays"
-                :key="`${carrier.key}-latency`"
-                :data-carrier-ping="`${carrier.key}-latency`"
-                class="flex min-h-0 min-w-0 flex-col gap-[2px]"
-                :title="carrier.latencyTooltip"
+        <div class="grid min-w-0 gap-1.5" :data-ping-family="isTransit ? undefined : family">
+          <div v-if="isTransit || families.length > 1 || family === 'ipv6'" class="flex items-center justify-end gap-2">
+            <span v-if="isTransit" class="text-[11px] text-muted-foreground">
+              {{ appStore.lang === 'zh-CN' ? '中转估算' : 'Transit estimate' }}
+            </span>
+            <span v-if="families.length === 1 && family === 'ipv6'" class="rounded-md bg-foreground/5 px-2 py-0.5 text-[11px] text-muted-foreground">IPv6</span>
+            <div v-if="families.length > 1" role="group" :aria-label="appStore.lang === 'zh-CN' ? '网络协议' : 'Network protocol'" class="inline-flex rounded-lg bg-foreground/5 p-0.5">
+              <button
+                v-for="option in families" :key="option"
+                type="button"
+                class="rounded-md px-2 py-1 text-[11px] leading-none text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                :class="family === option && 'bg-card/90 font-semibold text-foreground shadow-sm'"
+                :aria-pressed="family === option"
+                @click.stop="selectedFamily = option"
               >
-                <div class="flex min-w-0 items-center justify-between gap-1 text-[10px] leading-none">
-                  <span class="flex min-w-0 items-center gap-1 text-muted-foreground">
-                    <span class="size-1.5 shrink-0 rounded-full" :class="carrier.dotClass" />
-                    <span class="truncate">{{ carrier.label }}</span>
-                  </span>
-                  <span class="shrink-0 tabular-nums font-medium">{{ carrier.latencyDisplay }}</span>
-                </div>
-                <div
-                  class="grid h-1.5 min-w-0 items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
-                  :style="{ gridTemplateColumns: `repeat(${carrier.latencyBars.length}, minmax(0, 1fr))` }"
+                {{ option === 'ipv4' ? 'IPv4' : 'IPv6' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)] gap-x-2.5">
+            <button
+              v-for="metric in pingMetrics" :key="metric"
+              type="button"
+              :data-node-ping-bars="metric"
+              class="group/panel grid min-w-0 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              :class="!props.node.online && 'opacity-50'"
+              :aria-label="`${props.node.name} 三网${metric === 'latency' ? '延迟' : '丢包'}监测`"
+              @click.stop="emit('pingClick')"
+            >
+              <span
+                v-for="carrier in carrierRows" :key="carrier.key"
+                :data-carrier-ping="`${carrier.key}-${metric}`"
+                class="grid min-h-6 min-w-0 items-center gap-1.5 text-[11px] leading-none tabular-nums"
+                :class="metric === 'latency'
+                  ? 'grid-cols-[minmax(0,2.1rem)_auto_minmax(0,1fr)]'
+                  : 'grid-cols-[auto_minmax(0,1fr)]'"
+                :title="metric === 'latency' ? carrier.latencyTooltip : carrier.lossTooltip"
+              >
+                <span v-if="metric === 'latency'" class="truncate text-foreground/80" :title="carrier.label">{{ carrier.label }}</span>
+                <span data-ping-value class="whitespace-nowrap text-right font-medium" :class="metric === 'latency' ? 'min-w-[3.1rem]' : 'min-w-[2.7rem]'">
+                  {{ metric === 'latency' ? carrier.latencyDisplay : carrier.lossDisplay }}
+                </span>
+                <span
+                  class="grid h-2.5 min-w-0 gap-px"
+                  :style="{ gridTemplateColumns: `repeat(${(metric === 'latency' ? carrier.latencyBars : carrier.lossBars).length}, minmax(0, 1fr))` }"
                 >
                   <DataTooltip
-                    v-for="bar in carrier.latencyBars" :key="bar.key"
-                    placement="top" :content="bar.tooltip" class="h-full w-full"
+                    v-for="bar in (metric === 'latency' ? carrier.latencyBars : carrier.lossBars)" :key="bar.key"
+                    as="span" placement="top" :content="bar.tooltip" class="h-full min-w-0"
                   >
-                    <span
-                      class="block h-full w-full rounded-[1px] transition-transform duration-150 group-hover/data-tooltip:scale-y-160 group-hover/panel:opacity-60 group-hover/data-tooltip:!opacity-100"
-                      :class="bar.className"
-                    />
+                    <span class="block h-full w-full rounded-[1px] group-hover/data-tooltip:outline-1 group-hover/data-tooltip:outline-ring" :class="bar.className" />
                   </DataTooltip>
-                </div>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            data-node-ping-bars="loss"
-            class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
-            :class="[nodeCardCarrierPingPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
-            :aria-label="`${props.node.name} 三网丢包监测`"
-            @click.stop="emit('pingClick')"
-          >
-            <div class="flex items-center justify-between text-[11px] leading-none">
-              <span class="text-muted-foreground">丢包</span>
-              <span class="text-[10px] text-muted-foreground/70">{{ isTransit ? (appStore.lang === 'zh-CN' ? '中转估算' : 'Transit estimate') : '三网' }}</span>
-            </div>
-
-            <div class="grid min-h-0 flex-1 grid-rows-3 gap-1">
-              <div
-                v-for="carrier in carrierDisplays"
-                :key="`${carrier.key}-loss`"
-                :data-carrier-ping="`${carrier.key}-loss`"
-                class="flex min-h-0 min-w-0 flex-col gap-[2px]"
-                :title="carrier.lossTooltip"
-              >
-                <div class="flex min-w-0 items-center justify-between gap-1 text-[10px] leading-none">
-                  <span class="flex min-w-0 items-center gap-1 text-muted-foreground">
-                    <span class="size-1.5 shrink-0 rounded-full" :class="carrier.dotClass" />
-                    <span class="truncate">{{ carrier.label }}</span>
-                  </span>
-                  <span class="shrink-0 tabular-nums font-medium">{{ carrier.lossDisplay }}</span>
-                </div>
-                <div
-                  class="grid h-1.5 min-w-0 items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
-                  :style="{ gridTemplateColumns: `repeat(${carrier.lossBars.length}, minmax(0, 1fr))` }"
-                >
-                  <DataTooltip
-                    v-for="bar in carrier.lossBars" :key="bar.key"
-                    placement="top" :content="bar.tooltip" class="h-full w-full"
-                  >
-                    <span
-                      class="block h-full w-full rounded-[1px] transition-transform duration-150 group-hover/data-tooltip:scale-y-160 group-hover/panel:opacity-60 group-hover/data-tooltip:!opacity-100"
-                      :class="bar.className"
-                    />
-                  </DataTooltip>
-                </div>
-              </div>
-            </div>
-          </button>
+                </span>
+              </span>
+            </button>
+          </div>
         </div>
-        <NodeReturnRoutes :uuid="props.node.uuid" />
+        <NodeReturnRoutes :uuid="props.node.uuid" :family="family" directional />
 
         <!-- 离线遮罩 -->
         <div

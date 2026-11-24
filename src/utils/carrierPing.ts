@@ -1,6 +1,11 @@
 import type { NodePingHistoryPoint, NodePingStatsState, NodePingTaskStatsState } from '@/composables/useNodePingStats'
 
 export type ChinaCarrierKey = 'unicom' | 'telecom' | 'mobile'
+export type PingAddressFamily = 'ipv4' | 'ipv6'
+
+const BARE_IPV6 = /^[\da-f:.]+$/i
+const IPV4_HOSTNAME = /^(?:\d+\.){3}\d+$/
+const TASK_FAMILY = /(?:^|[^a-z\d])(?:ip)?v([46])(?![a-z\d])/i
 
 export interface ChinaCarrierDefinition {
   key: ChinaCarrierKey
@@ -56,6 +61,26 @@ export function matchChinaCarrier(taskName: string): ChinaCarrierKey | null {
       return definition.key
   }
   return null
+}
+
+export function getPingAddressFamily(task: Pick<NodePingTaskStatsState, 'name' | 'target'>): PingAddressFamily | undefined {
+  const address = task.target?.trim()
+  if (address) {
+    const bareV6 = BARE_IPV6.test(address) && address.indexOf(':') !== address.lastIndexOf(':')
+    try {
+      const { hostname } = new URL(address.includes('://') ? address : `http://${bareV6 ? `[${address}]` : address}`)
+      if (hostname.startsWith('['))
+        return 'ipv6'
+      if (IPV4_HOSTNAME.test(hostname))
+        return 'ipv4'
+    }
+    catch {
+      // Public task lists may omit the target or return a display-only name.
+    }
+  }
+  const nameFamily = task.name.match(TASK_FAMILY)?.[1]
+  if (nameFamily)
+    return nameFamily === '6' ? 'ipv6' : 'ipv4'
 }
 
 function mergeTaskHistory(tasks: NodePingTaskStatsState[]): NodePingHistoryPoint[] {

@@ -14,34 +14,23 @@ const observed = (status = 'ok', collectedAt = AT, source = 'helper') => ({ dire
 for (const size of ['mini', 'compact', 'comfortable', 'large'] as const) {
   for (const width of [1440, 390, 320]) {
     for (const dark of [false, true]) {
-      test(`inline route summary ${size}/${width}/${dark ? 'dark' : 'light'} stays one neutral row`, async ({ page }) => {
+      test(`directional route summary fits ${size}/${width}/${dark ? 'dark' : 'light'}`, async ({ page }) => {
         await page.setViewportSize({ width, height: 900 })
         await installKomariFixture(page, { hideEarth: true, nodeCardSize: size, dark, themeSettings: { returnRoutesVisible: true, returnRouteConfig: doc({ manual }) } })
         await page.goto('/')
         const node = card(page)
         const line = node.locator('[data-route-summary]')
         await expect(line).toBeVisible()
-        expect(await line.locator('[data-return-carrier]').evaluateAll(els => els.map(el => el.getAttribute('data-return-carrier')))).toEqual(['unicom', 'telecom', 'mobile'])
+        expect(await line.locator('[data-route-row]').evaluateAll(els => els.map(el => el.getAttribute('data-route-row')))).toEqual(['telecom', 'unicom', 'mobile'])
         for (const [carrier, label] of Object.entries(labels)) {
           await expect(line.locator(`[data-return-carrier="${carrier}"]`)).toContainText(label)
           await expect(node.locator(`[data-carrier-ping="${carrier}-latency"]`)).toBeVisible()
           await expect(node.locator(`[data-carrier-ping="${carrier}-loss"]`)).toBeVisible()
         }
-        const layout = await line.evaluate((element) => {
-          const bounds = element.getBoundingClientRect()
-          const carriers = [...element.querySelectorAll<HTMLElement>('[data-return-carrier]')]
-          const markerColors = Array.from(element.querySelectorAll('[data-carrier-marker]'), e => getComputedStyle(e).backgroundColor)
-          const neutral = carriers.every((e) => {
-            const s = getComputedStyle(e)
-            return s.backgroundColor === 'rgba(0, 0, 0, 0)' && Number.parseFloat(s.borderTopWidth) === 0
-          })
-          return { height: bounds.height, rows: new Set(carriers.map(e => Math.round(e.getBoundingClientRect().top))).size, neutral, markerColors, text: element.textContent }
-        })
-        expect(layout.height).toBeLessThanOrEqual(18)
-        expect(layout.rows).toBe(1)
-        expect(layout.neutral).toBe(true)
-        expect(new Set(layout.markerColors).size).toBe(3)
-        expect(layout.text).not.toMatch(/未知|过期|未测|UTC|回程|联通|电信|移动|\.\.\.|…/)
+        await expect(line.getByRole('columnheader', { name: '去程', exact: true })).toBeVisible()
+        await expect(line.getByRole('columnheader', { name: '回程', exact: true })).toBeVisible()
+        await expect(line.locator('[data-outbound-carrier]')).toHaveCount(0)
+        await expect(line).not.toContainText(/未知|过期|未测|UTC|\.\.\.|…/)
         await expect(node.locator('summary,[data-route-details],time,pre')).toHaveCount(0)
         await expect(page.locator('html')).toHaveJSProperty('scrollWidth', width)
       })
@@ -116,6 +105,7 @@ test('valid current automatic observation is administrator-only and retains priv
   const region = card(page).locator('[data-return-routes]')
   await expect(region.locator('[data-return-carrier="telecom"]')).toHaveText('163')
   await expect(region.locator('[data-return-carrier="telecom"]')).toHaveAttribute('data-route-status', 'fresh-auto')
+  await expect(region.locator('[data-route-summary] time')).toHaveAttribute('datetime', '2026-07-25T11:00:00.000Z')
   await expect(region.locator('[data-route-details]')).not.toBeVisible()
   await region.locator('summary').click()
   await expect(region.locator('[data-route-details]')).toBeVisible()

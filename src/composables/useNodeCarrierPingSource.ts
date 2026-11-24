@@ -1,10 +1,12 @@
 import type { MaybeRefOrGetter } from 'vue'
 import type { NodeData } from '@/stores/nodes'
-import { computed, toValue } from 'vue'
+import type { PingAddressFamily } from '@/utils/carrierPing'
+import { computed, ref, toValue } from 'vue'
 import { useNodeCarrierPingDisplay } from '@/composables/useNodeCarrierPingDisplay'
 import { useNodePingDisplay } from '@/composables/useNodePingDisplay'
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
+import { getPingAddressFamily, matchChinaCarrier } from '@/utils/carrierPing'
 import { deriveTransitCarrierPing } from '@/utils/transitCarrierPing'
 
 type TransitReason = 'relay-missing' | 'relay-offline' | 'records-disabled' | 'loading' | 'load-failed' | 'task-missing' | 'link-empty'
@@ -48,6 +50,29 @@ export function useNodeCarrierPingSource(node: MaybeRefOrGetter<NodeData>, enabl
   const display = useNodePingDisplay(sourceUuid, {
     enabled: () => toValue(enabled) && (!isTransit.value || relay.value?.online === true),
   })
+  const selectedFamily = ref<PingAddressFamily>('ipv4')
+  const carrierTasks = computed(() => display.pingStats.taskStats.value
+    .filter(task => task.assigned !== false && matchChinaCarrier(task.name))
+    .map(task => ({ task, family: getPingAddressFamily(task) })))
+  const reportedIPv4 = computed(() => Boolean(toValue(node).ipv4?.trim()))
+  const reportedIPv6 = computed(() => Boolean(toValue(node).ipv6?.trim()))
+  const ipv6Only = computed(() => reportedIPv6.value && !reportedIPv4.value)
+  const families = computed<PingAddressFamily[]>(() => {
+    if (ipv6Only.value)
+      return ['ipv6']
+    if (reportedIPv6.value)
+      return ['ipv4', 'ipv6']
+    if (reportedIPv4.value)
+      return ['ipv4']
+    // Guest views can omit both address fields.
+    const configuredIPv6 = app.returnRouteConfig.document.nodes[toValue(node).uuid]?.ipv6
+    const observedIPv6 = !isTransit.value && carrierTasks.value.some(({ family, task }) => family === 'ipv6' && task.hasLatency)
+    return configuredIPv6 || observedIPv6 ? ['ipv4', 'ipv6'] : ['ipv4']
+  })
+  const family = computed(() => families.value.includes(selectedFamily.value) ? selectedFamily.value : (families.value[0] ?? 'ipv4'))
+  const directTasks = computed(() => carrierTasks.value
+    .filter(task => (task.family ?? 'ipv4') === family.value)
+    .map(({ task }) => task))
   const transit = computed(() => {
     if (!rule.value)
       return undefined
@@ -76,6 +101,10 @@ export function useNodeCarrierPingSource(node: MaybeRefOrGetter<NodeData>, enabl
       carriers: deriveTransitCarrierPing(reason ? [] : tasks, rule.value.task),
     }
   })
-  const { carrierDisplays } = useNodeCarrierPingDisplay(display.pingStats, display.pingStatsEnabled, transit)
-  return { carrierDisplays, isTransit }
+  const { carrierDisplays } = useNodeCarrierPingDisplay(
+    { ...display.pingStats, taskStats: directTasks },
+    display.pingStatsEnabled,
+    transit,
+  )
+  return { carrierDisplays, isTransit, family, families, selectedFamily }
 }

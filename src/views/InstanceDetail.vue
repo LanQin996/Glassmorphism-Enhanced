@@ -562,7 +562,7 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
       </div>
 
       <div v-if="appStore.returnRoutesVisible" class="px-4">
-        <NodeReturnRoutes :uuid="data.uuid" />
+        <NodeReturnRoutes :uuid="data.uuid" :node-ipv4="ipSupport.includes('IPv4')" :node-ipv6="ipSupport.includes('IPv6')" />
       </div>
 
       <!-- 价格指标卡片 -->

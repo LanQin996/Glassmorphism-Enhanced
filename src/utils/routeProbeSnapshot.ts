@@ -105,7 +105,7 @@ export function withProbeResults(document: ReturnRouteDocument, uuid: string, sn
     if (incoming && (!saved || Date.parse(incoming.collectedAt) >= Date.parse(saved.collectedAt)))
       auto[carrier] = incoming
   }
-  return { version: 1, nodes: { [uuid]: { manual: existing.manual, auto } } }
+  return { version: 1, nodes: { [uuid]: { ...existing, auto } } }
 }
 
 export function protocolEvidenceGroups(uuid: string, paths: ProtocolPaths, ttlHours: number, now: number) {

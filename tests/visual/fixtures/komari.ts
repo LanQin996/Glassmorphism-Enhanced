@@ -40,6 +40,7 @@ export interface VisualFixtureOptions {
   pingTaskOrdering?: boolean
   noPingTasks?: boolean
   multipleTelecomTasks?: boolean
+  pingAddressFamilies?: boolean
   earthArcMode?: 'auto' | 'persistent' | 'upstream' | 'off'
   upstreamTags?: boolean
   missingGeoNode?: boolean
@@ -87,8 +88,8 @@ function buildClients(options: VisualFixtureOptions = {}) {
       os: index % 2 === 0 ? 'Ubuntu 24.04.4 LTS' : 'Debian GNU/Linux 12',
       kernel_version: '6.8.0-visual-test',
       gpu_name: index === 3 ? 'NVIDIA A100 80GB PCIe' : '',
-      ipv4: options.missingGeoNode && index === 11 ? '' : `192.0.2.${index + 10}`,
-      ipv6: options.missingGeoNode && index === 11 ? '' : `2001:db8:abcd:${index + 1}::${index + 10}`,
+      ipv4: (options.missingGeoNode && index === 11) || (options.pingAddressFamilies && [2, 3].includes(index)) ? '' : `192.0.2.${index + 10}`,
+      ipv6: (options.missingGeoNode && index === 11) || (options.pingAddressFamilies && [1, 3].includes(index)) ? '' : `2001:db8:abcd:${index + 1}::${index + 10}`,
       region: options.missingGeoNode && index === 11 ? '' : fixture.code,
       public_remark: index === 1 ? '长备注用于验证文本换行与裁切' : '',
       mem_total: (index % 4 + 1) * GIB,
@@ -353,28 +354,39 @@ function withoutLatestTrafficFields(): Record<string, unknown> {
 async function handleRpc(route: Route, clientFixtures = clients, options: VisualFixtureOptions = {}): Promise<void> {
   const payload = route.request().postDataJSON() as { id: unknown, method: string, params?: Record<string, unknown> }
   const uuid = typeof payload.params?.uuid === 'string' ? payload.params.uuid : typeof payload.params?.entity_id === 'string' ? payload.params.entity_id : uuidFor(0)
-  const pingTasks = options.transit
-    ? [
-        { id: 10, name: '中国联通', interval: 60, loss: 1, weight: 0 },
-        { id: 20, name: '中国电信', interval: 60, loss: 1, weight: 1 },
-        { id: 30, name: '中国移动', interval: 60, loss: 1, weight: 2 },
-        { id: 40, name: 'Relay-Target-v6', interval: 60, loss: 2, weight: 3 },
-      ].filter(task => !options.transitMissingCarrier || task.id !== 20)
-    : options.pingTaskOrdering
+  const addressFamilyTasks = [
+    { id: 10, name: '江苏联通', value: 61 },
+    { id: 20, name: '江苏电信', value: 52 },
+    { id: 30, name: '江苏移动', value: 73 },
+    { id: 11, name: '江苏联通IPv6', value: 174 },
+    { id: 21, name: '江苏电信V6', value: 155 },
+    { id: 31, name: '江苏移动', target: '[2001:db8::1]:443', value: 158 },
+    { id: 22, name: '江苏电信备用', clients: [uuidFor(4)], value: 240 },
+  ]
+  const pingTasks = options.pingAddressFamilies
+    ? addressFamilyTasks.map(({ value: _value, ...task }) => ({ ...task, interval: 60, loss: 0 }))
+    : options.transit
       ? [
-          { id: 30, name: '浙江移动', interval: 60, loss: 0, weight: 0 },
-          { id: 10, name: '浙江联通', interval: 60, loss: 0, weight: 1 },
-          { id: 20, name: '浙江电信', interval: 60, loss: 0, weight: 2 },
-        ]
-      : options.multipleTelecomTasks
+          { id: 10, name: '中国联通', interval: 60, loss: 1, weight: 0 },
+          { id: 20, name: '中国电信', interval: 60, loss: 1, weight: 1 },
+          { id: 30, name: '中国移动', interval: 60, loss: 1, weight: 2 },
+          { id: 40, name: 'Relay-Target-v6', interval: 60, loss: 2, weight: 3 },
+        ].filter(task => !options.transitMissingCarrier || task.id !== 20)
+      : options.pingTaskOrdering
         ? [
-            { id: 10, name: '中国联通', interval: 60, loss: 0, weight: 0 },
-            { id: 20, name: '上海电信', interval: 60, loss: 0, weight: 1 },
-            { id: 21, name: '广州电信', interval: 60, loss: 0, weight: 2 },
-            { id: 22, name: '北京电信', interval: 60, loss: 0, weight: 3 },
-            { id: 30, name: '中国移动', interval: 60, loss: 0, weight: 4 },
+            { id: 30, name: '浙江移动', interval: 60, loss: 0, weight: 0 },
+            { id: 10, name: '浙江联通', interval: 60, loss: 0, weight: 1 },
+            { id: 20, name: '浙江电信', interval: 60, loss: 0, weight: 2 },
           ]
-        : options.noPingTasks ? [] : [{ id: 1, name: 'Tokyo', interval: 60, loss: 3.2, weight: 1 }]
+        : options.multipleTelecomTasks
+          ? [
+              { id: 10, name: '中国联通', interval: 60, loss: 0, weight: 0 },
+              { id: 20, name: '上海电信', interval: 60, loss: 0, weight: 1 },
+              { id: 21, name: '广州电信', interval: 60, loss: 0, weight: 2 },
+              { id: 22, name: '北京电信', interval: 60, loss: 0, weight: 3 },
+              { id: 30, name: '中国移动', interval: 60, loss: 0, weight: 4 },
+            ]
+          : options.noPingTasks ? [] : [{ id: 1, name: 'Tokyo', interval: 60, loss: 3.2, weight: 1 }]
   const metricPingTasks = options.pingTaskOrdering
     ? [pingTasks[2]!, pingTasks[0]!, pingTasks[1]!]
     : pingTasks
@@ -382,7 +394,9 @@ async function handleRpc(route: Route, clientFixtures = clients, options: Visual
     task_id: task.id,
     client: uuid,
     time: new Date(Date.parse(FIXED_NOW) - (47 - index) * 75_000).toISOString(),
-    value: options.transit ? task.id === 40 ? 63 : 32 + (task.id - 10) : index % 17 === 0 ? -1 : 76 + index + task.id,
+    value: options.pingAddressFamilies
+      ? (uuid === uuidFor(2) && task.id === 31 ? -1 : addressFamilyTasks.find(item => item.id === task.id)!.value)
+      : options.transit ? task.id === 40 ? 63 : 32 + (task.id - 10) : index % 17 === 0 ? -1 : 76 + index + task.id,
   })))
   let result: unknown
 

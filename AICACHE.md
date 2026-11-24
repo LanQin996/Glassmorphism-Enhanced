@@ -1,5 +1,11 @@
 # AI Cache / Agent Handoff Log
 
+## LanQin996 fork · 节点卡片改造（M4/M5）
+
+- 基于 `bb4a96a` 在 `codex/server-card-redesign` 开发。三网 Ping、去程、回程跟随卡片的 IPv4/IPv6 选择。手动管理按节点和协议编辑，两套标签一次提交。
+- 原 `manual`、`outbound` 和管理员可见的自动采集按 IPv4 读取。IPv6 使用节点下的 `ipv6.manual`、`ipv6.outbound`，缺失线路保持空白。
+- ESLint、类型检查、视觉构建、256 项单元测试和 164 项相关 Chromium 测试通过。需要 Linux `fcntl` 的 `route-probe-v2` 单元和浏览器套件无法在 Windows 执行。
+
 ## 当前执行：v1.2.1 后台归类与伴生依赖简化（M4/M6，保持鉴权，禁止提交发布）
 
 - 仅后台设置与手动编辑体验；基线 1064 个文件和源码备份在 settings-companion-review/before*。前台卡片、Ping/Transit/流量算法、Full 安装器及降级保护不改。

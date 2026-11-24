@@ -26,6 +26,8 @@ export interface NodePingTaskStatsState {
   name: string
   stats: NodePingStatsState
   hasLatency: boolean
+  target?: string
+  assigned?: boolean
 }
 
 interface PingRecord {
@@ -282,6 +284,15 @@ function buildMetricRecordsByClient(nodeUuid: string, stats: PingMetricTaskStats
   return buildRecordsByClient(syntheticRecords)
 }
 
+function mergeTaskMetadata(tasks: PingTaskInfo[], configured: PingTaskInfo[]): PingTaskInfo[] {
+  const byId = new Map(tasks.map(task => [task.id, task]))
+  for (const task of configured) {
+    const current = byId.get(task.id)
+    byId.set(task.id, { ...current, ...task, name: task.name?.trim() || current?.name || `Task ${task.id}` })
+  }
+  return [...byId.values()]
+}
+
 async function loadPingMetricRecords(nodeUuid: string, hours: number, maxCount?: number): Promise<SharedPingRecordsState | null> {
   const [statsResult, metricsResult, backendTasksResult] = await Promise.allSettled([
     loadPingMetricStats({ entity_id: nodeUuid, hours, max_points: maxCount }),
@@ -398,7 +409,7 @@ async function loadPingMetricRecords(nodeUuid: string, hours: number, maxCount?:
 
   return {
     recordsByClient,
-    tasks: orderPingTasksByBackend([...taskMap.values()], backendTasks),
+    tasks: orderPingTasksByBackend(mergeTaskMetadata([...taskMap.values()], backendTasks), backendTasks),
     knownTaskNames: backendTasks.map(task => task.name.trim()),
     source: 'metric',
     metricStats: stats,
@@ -430,14 +441,12 @@ async function loadSharedPingRecords(entry: SharedPingRecordsEntry, hours: numbe
         const payload = await loadPingRecordsWithTasks(hours, maxCount, nodeUuid)
         if (!isCurrent())
           return
-        const tasks = payload.tasks.length
-          ? payload.tasks
-          : await loadPublicPingTasks().catch(() => [])
+        const configured = await loadPublicPingTasks().catch(() => [])
         if (!isCurrent())
           return
         entry.data.value = {
           recordsByClient: buildRecordsByClient(payload.records),
-          tasks,
+          tasks: mergeTaskMetadata(payload.tasks, configured),
           source: 'legacy',
         }
       }
@@ -739,6 +748,8 @@ function buildTaskStats(state: SharedPingRecordsState, nodeUuid: string): NodePi
     return [{
       id: taskId,
       name: task?.name?.trim() || metricName || `Task ${taskId}`,
+      target: task?.target,
+      assigned: Array.isArray(task?.clients) ? task.clients.includes(nodeUuid) : undefined,
       stats: buildStats(records, metricStats, metricLossPoints),
       hasLatency,
     }]

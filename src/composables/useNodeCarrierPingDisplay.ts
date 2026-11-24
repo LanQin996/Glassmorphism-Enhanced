@@ -16,7 +16,6 @@ export interface CarrierPingBar {
 export interface CarrierPingDisplay {
   key: ChinaCarrierKey
   label: string
-  dotClass: string
   taskNames: string[]
   latencyDisplay: string
   lossDisplay: string
@@ -33,12 +32,6 @@ interface NodePingTaskStatsSource {
 }
 
 const EMPTY_PING_BAR_COUNT = 20
-
-const CARRIER_DOT_CLASSES: Record<ChinaCarrierKey, string> = {
-  unicom: 'bg-rose-500',
-  telecom: 'bg-blue-500',
-  mobile: 'bg-emerald-500',
-}
 
 function getLatencyToneClass(latency: number): string {
   if (latency <= 60)
@@ -139,7 +132,7 @@ export function useNodeCarrierPingDisplay(
       ? `${Math.round(carrier.stats.avgLatency)} ms`
       : source.loading.value ? loadingText : '--'
     const lossDisplay = carrier.stats.hasData
-      ? `${carrier.stats.avgLoss.toFixed(1)}%`
+      ? carrier.stats.avgLoss === 0 ? '0%' : `${carrier.stats.avgLoss.toFixed(1)}%`
       : source.loading.value ? loadingText : '--'
     const latencyTooltip = carrier.hasLatency
       ? `${taskHint}\n${isZh ? '平均延迟' : 'Average latency'} ${Math.round(carrier.stats.avgLatency)} ms`
@@ -166,7 +159,6 @@ export function useNodeCarrierPingDisplay(
     return {
       key: carrier.key,
       label,
-      dotClass: CARRIER_DOT_CLASSES[carrier.key],
       taskNames: carrier.taskNames,
       latencyDisplay: estimate ? (carrier.hasLatency ? `≈${latencyDisplay}` : '--') : latencyDisplay,
       lossDisplay: estimate ? (carrier.stats.hasData ? `≈${lossDisplay}` : '--') : lossDisplay,

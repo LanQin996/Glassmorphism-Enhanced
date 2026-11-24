@@ -1,3 +1,4 @@
+import type { PingAddressFamily } from '@/utils/carrierPing'
 import type { CdnTraceEvidence } from '@/utils/cdnRouteEvidence'
 import type { ReturnCarrier, ReturnHop, ReturnTarget } from '@/utils/returnRouteClassification'
 import type { AsnLookup, ProbeProtocol } from '@/utils/routeProbeEvidence'
@@ -19,8 +20,12 @@ export interface AutoReturnRoute {
   reachedTarget: boolean
   hops: ReturnHop[]
 }
-export interface NodeReturnRoutes {
+interface ManualNodeRoutes {
   manual: Partial<Record<ReturnCarrier, ManualReturnRoute>>
+  outbound?: Partial<Record<ReturnCarrier, ManualReturnRoute>>
+}
+export interface NodeReturnRoutes extends ManualNodeRoutes {
+  ipv6?: ManualNodeRoutes
   auto: Partial<Record<ReturnCarrier, AutoReturnRoute>>
 }
 export interface ReturnRouteDocument { version: 1, nodes: Record<string, NodeReturnRoutes> }
@@ -58,6 +63,23 @@ function manual(value: unknown, legacy: boolean): ManualReturnRoute {
     throw new Error('手动线路名需要 1–80 个非控制字符')
   return { label, updatedAt: data.updatedAt == null ? null : timestamp(data.updatedAt) }
 }
+
+function routeCarrierEntries(raw: unknown): Array<[ReturnCarrier, unknown]> {
+  const entries = Object.entries(raw === undefined ? {} : object(raw))
+  if (entries.some(([key]) => !RETURN_CARRIERS.includes(key as ReturnCarrier)))
+    throw new Error('运营商键只支持 telecom、unicom、mobile')
+  return entries as Array<[ReturnCarrier, unknown]>
+}
+
+function manualNodeRoutes(node: Record<string, unknown>, legacy: boolean): ManualNodeRoutes {
+  const result: ManualNodeRoutes = { manual: {} }
+  for (const [carrier, value] of routeCarrierEntries(node.manual))
+    result.manual[carrier] = manual(value, legacy)
+  for (const [carrier, value] of routeCarrierEntries(node.outbound))
+    (result.outbound ??= {})[carrier] = manual(value, legacy)
+  return result
+}
+
 function automatic(value: unknown, carrier: ReturnCarrier): AutoReturnRoute {
   const data = object(value)
   const target = data.target as ReturnTarget
@@ -123,17 +145,12 @@ export function parseReturnRouteConfig(raw: unknown): ReturnRouteConfig {
       if (!UUID.test(uuid))
         throw new Error('节点键必须是 UUID，不能使用名称')
       const node = object(value)
-      const result: NodeReturnRoutes = { manual: {}, auto: {} }
-      const manualData = node.manual === undefined ? {} : object(node.manual)
-      const autoData = node.auto === undefined ? {} : object(node.auto)
-      if ([...Object.keys(manualData), ...Object.keys(autoData)].some(key => !RETURN_CARRIERS.includes(key as ReturnCarrier)))
-        throw new Error('运营商键只支持 telecom、unicom、mobile')
-      for (const carrier of RETURN_CARRIERS) {
-        if (manualData[carrier] !== undefined)
-          result.manual[carrier] = manual(manualData[carrier], data.version === 0)
-        if (autoData[carrier] !== undefined)
-          result.auto[carrier] = automatic(autoData[carrier], carrier)
-      }
+      const legacy = data.version === 0
+      const result: NodeReturnRoutes = { ...manualNodeRoutes(node, legacy), auto: {} }
+      if (node.ipv6 !== undefined)
+        result.ipv6 = manualNodeRoutes(object(node.ipv6), legacy)
+      for (const [carrier, evidence] of routeCarrierEntries(node.auto))
+        result.auto[carrier] = automatic(evidence, carrier)
       nodes[uuid] = result
     }
     return { document: { version: 1, nodes }, error: null, migrated: data.version === 0 }
@@ -152,15 +169,34 @@ export function serializeReturnRoutes(document: ReturnRouteDocument): string {
   return JSON.stringify(parsed.document, null, 2)
 }
 
-export function resolveReturnRoutes(document: ReturnRouteDocument, uuid: string, autoEnabled: boolean, ttlHours: number, now = Date.now()): ReturnRouteDisplay[] {
+export function resolveOutboundRoutes(document: ReturnRouteDocument, uuid: string, family: PingAddressFamily = 'ipv4'): ReturnRouteDisplay[] {
   const node = document.nodes[uuid]
+  const outbound = (family === 'ipv6' ? node?.ipv6 : node)?.outbound
+  return RETURN_CARRIERS.flatMap((carrier) => {
+    const route = outbound?.[carrier]
+    return route
+      ? [{
+          carrier,
+          label: route.label,
+          status: 'manual',
+          source: 'manual',
+          at: route.updatedAt,
+          detail: '管理员手动标注（国内 → 节点）',
+        }]
+      : []
+  })
+}
+
+export function resolveReturnRoutes(document: ReturnRouteDocument, uuid: string, autoEnabled: boolean, ttlHours: number, now = Date.now(), family: PingAddressFamily = 'ipv4'): ReturnRouteDisplay[] {
+  const node = document.nodes[uuid]
+  const labels = family === 'ipv6' ? node?.ipv6 : node
   const ttl = Math.min(168, Math.max(1, Number.isFinite(ttlHours) ? ttlHours : 24)) * 3600000
   return RETURN_CARRIERS.map((carrier) => {
     const base: ReturnRouteDisplay = { carrier, label: '未检测', status: 'not-detected', source: null, at: null, detail: '没有启用或提供回程采集结果；不使用 Ping RTT 推断线路' }
-    const override = node?.manual[carrier]
+    const override = labels?.manual[carrier]
     if (override)
       return { ...base, label: override.label, status: 'manual', source: 'manual', at: override.updatedAt, detail: '管理员手动标注，优先于自动结果；不是自动测量认证' }
-    const observed = autoEnabled ? node?.auto[carrier] : undefined
+    const observed = family === 'ipv4' && autoEnabled ? node?.auto[carrier] : undefined
     if (!observed)
       return base
     const source = observed.source === 'fixture' ? 'fixture' : observed.source === 'replay' ? 'replay' : 'auto'

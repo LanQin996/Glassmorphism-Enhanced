@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resolveReturnRoutes } from '../../src/utils/returnRoutes'
+import { resolveOutboundRoutes, resolveReturnRoutes } from '../../src/utils/returnRoutes'
 import { parseProbeSnapshot, withProbeResults } from '../../src/utils/routeProbeSnapshot'
 
 const UUID = '00000000-0000-4000-8000-000000000001'
@@ -26,11 +26,24 @@ test('native companion evidence is bound to UUID and marked simulated, not a liv
   expect(resolveReturnRoutes(merged, UUID, true, 24, NOW)[0]).toMatchObject({ label: '163', source: 'fixture', status: 'fresh-auto' })
   expect(Object.keys(merged.nodes)).toEqual([UUID])
 })
-test('manual overrides remain authoritative and state merge never mutates saved settings', () => {
-  const document = { version: 1 as const, nodes: { [UUID]: { manual: { telecom: { label: '管理员标注', updatedAt: null } }, auto: {} } } }
+test('manual routes in both directions survive the companion snapshot merge', () => {
+  const document = {
+    version: 1 as const,
+    nodes: {
+      [UUID]: {
+        manual: { telecom: { label: '管理员标注', updatedAt: null } },
+        outbound: { telecom: { label: '163', updatedAt: null } },
+        ipv6: { manual: {}, outbound: { unicom: { label: 'IPv6 标注', updatedAt: null } } },
+        auto: {},
+      },
+    },
+  }
   const before = JSON.stringify(document)
   const merged = withProbeResults(document, UUID, parseProbeSnapshot(snapshot()))
   expect(resolveReturnRoutes(merged, UUID, true, 24, NOW)[0]).toMatchObject({ label: '管理员标注', source: 'manual' })
+  expect(resolveOutboundRoutes(merged, UUID)[0]).toMatchObject({ label: '163', source: 'manual' })
+  expect(resolveOutboundRoutes(merged, UUID, 'ipv6')[0]).toMatchObject({ label: 'IPv6 标注', source: 'manual' })
+  expect(resolveReturnRoutes(merged, UUID, true, 24, NOW, 'ipv6').every(entry => entry.status === 'not-detected')).toBe(true)
   expect(JSON.stringify(document)).toBe(before)
 })
 test('disabled node never exposes cached plugin results', () => {

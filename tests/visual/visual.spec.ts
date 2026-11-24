@@ -136,7 +136,7 @@ test('node card degrades cleanly with no ping tasks', async ({ page }) => {
   await installKomariFixture(page, { noPingTasks: true, hideEarth: true })
   await openStablePage(page)
   await expectCarrierRows(page)
-  await expect(firstNodeCard(page).locator('[data-carrier-ping$="-latency"]')).toContainText([/联通\s*--/, /电信\s*--/, /移动\s*--/])
+  await expect(firstNodeCard(page).locator('[data-carrier-ping$="-latency"]')).toContainText([/电信\s*--/, /联通\s*--/, /移动\s*--/])
   expect(errors).toEqual([])
 })
 
@@ -145,7 +145,7 @@ test('node card degrades cleanly with one ordinary ping task', async ({ page }) 
   await installKomariFixture(page, { hideEarth: true })
   await openStablePage(page)
   await expectCarrierRows(page)
-  await expect(firstNodeCard(page).locator('[data-carrier-ping$="-loss"]')).toContainText([/联通\s*--/, /电信\s*--/, /移动\s*--/])
+  await expect(firstNodeCard(page).locator('[data-carrier-ping$="-loss"] [data-ping-value]')).toHaveText(['--', '--', '--'])
 })
 
 test('node card renders all three carrier latency and loss groups', async ({ page }) => {
@@ -159,6 +159,70 @@ test('node card renders all three carrier latency and loss groups', async ({ pag
     await expect(card.locator(`[data-carrier-ping="${carrier}-latency"]`)).toContainText('ms')
     await expect(card.locator(`[data-carrier-ping="${carrier}-loss"]`)).toContainText('%')
   }
+})
+
+test('each card switches its Ping and both route directions by address family', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 946, height: 1120 })
+  const labels = (values: Record<string, string>) => Object.fromEntries(
+    Object.entries(values).map(([carrier, label]) => [carrier, { label, updatedAt: null }]),
+  )
+  await installKomariFixture(page, {
+    pingAddressFamilies: true,
+    hideEarth: true,
+    nodeCardSize: 'large',
+    themeSettings: {
+      returnRoutesVisible: true,
+      returnRouteConfig: JSON.stringify({
+        version: 1,
+        nodes: {
+          '00000000-0000-4000-8000-000000000001': {
+            outbound: labels({ telecom: 'CN2 GIA', unicom: '4837', mobile: 'CMI' }),
+            manual: labels({ telecom: '163', unicom: '4837', mobile: 'CMI' }),
+            ipv6: {
+              outbound: labels({ telecom: '163', unicom: '9929', mobile: 'CMIN2' }),
+              manual: labels({ telecom: '9929', unicom: '9929', mobile: '9929' }),
+            },
+          },
+          '00000000-0000-4000-8000-000000000003': { manual: labels({ telecom: 'IPv4 only' }) },
+        },
+      }),
+    },
+  })
+  await openStablePage(page)
+
+  const dual = firstNodeCard(page)
+  const v4 = page.getByRole('button', { name: '查看节点 香港边缘节点-超长名称布局测试 详情', exact: true })
+  const v6 = page.getByRole('button', { name: '查看节点 东京-高负载 详情', exact: true })
+  const masked = page.getByRole('button', { name: '查看节点 新加坡-A100 详情', exact: true })
+  const telecomLatency = '[data-carrier-ping="telecom-latency"]'
+  await expect(dual.locator(telecomLatency)).toContainText('52 ms')
+  await expect(dual.locator(telecomLatency)).not.toHaveAttribute('title', /备用/)
+  await expect(dual.locator('[data-route-family="ipv4"] [data-outbound-carrier="telecom"]')).toHaveText('CN2 GIA')
+  await expect(dual.locator('[data-return-carrier="telecom"]')).toHaveText('163')
+  await dual.getByRole('button', { name: 'IPv6', exact: true }).click()
+  await expect(dual.getByRole('button', { name: 'IPv6', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(dual.locator(telecomLatency)).toContainText('155 ms')
+  await expect(dual.locator('[data-carrier-ping="mobile-latency"]')).toContainText('158 ms')
+  await expect(dual.locator('[data-route-family="ipv6"] [data-outbound-carrier="mobile"]')).toHaveText('CMIN2')
+  await expect(dual.locator('[data-return-carrier="telecom"]')).toHaveText('9929')
+  await expect(dual).not.toContainText('CN2 GIA')
+  await expect(dual.locator('svg[data-node-metric-icon="cpu"]')).toBeVisible()
+  await expect(dual.getByRole('button', { name: '收藏 主控-洛杉矶', exact: true }).locator('svg')).toBeVisible()
+  await expect(v4.getByRole('button', { name: 'IPv6', exact: true })).toHaveCount(0)
+  await expect(v4.locator(telecomLatency)).toContainText('52 ms')
+  await expect(v6.getByRole('button', { name: 'IPv4', exact: true })).toHaveCount(0)
+  await expect(v6.locator('[data-carrier-ping="mobile-loss"]')).toContainText('100.0%')
+  await expect(v6.locator('[data-return-routes]')).toHaveCount(0)
+  await expect(masked.getByRole('button', { name: 'IPv6', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/$/)
+  await dual.screenshot({ path: testInfo.outputPath('node-card.png'), animations: 'disabled' })
+  await dual.getByRole('button', { name: 'IPv4', exact: true }).click()
+  await expect(dual.locator('[data-return-carrier="telecom"]')).toHaveText('163')
+
+  await page.goto('/instance/00000000-0000-4000-8000-000000000001')
+  const detailRoutes = page.locator('[data-route-node="00000000-0000-4000-8000-000000000001"]')
+  await detailRoutes.getByRole('combobox', { name: '线路协议' }).selectOption('ipv6')
+  await expect(detailRoutes.locator('[data-return-carrier="telecom"]')).toHaveText('9929')
 })
 
 test('multiple telecom ping tasks aggregate into one carrier row', async ({ page }) => {

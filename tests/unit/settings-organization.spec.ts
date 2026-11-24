@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import manifest from '../../komari-theme.json' with { type: 'json' }
 import { manualRouteConfig, manualValues } from '../../src/utils/manualRouteSettings'
-import { parseReturnRouteConfig } from '../../src/utils/returnRoutes'
+import { parseReturnRouteConfig, resolveOutboundRoutes, resolveReturnRoutes } from '../../src/utils/returnRoutes'
 import { ENHANCED_SETTINGS_GROUPS, settingGroup, THEME_FIELDS } from '../../src/utils/themeSettings'
 
 const A = '00000000-0000-4000-8000-000000000001'
@@ -36,6 +36,28 @@ test('empty field removes only that carrier and never creates automatic evidence
   expect(out.document.nodes[A]!.manual.unicom).toBeUndefined()
   expect(manualValues(out.document.nodes[A])).toEqual({ ...values, unicom: '' })
   expect(out.document.nodes[A]!.auto).toEqual({})
+})
+test('manual routes round trip by family and direction with no cross-family fallback', () => {
+  const first = manualRouteConfig('', A, values, AT)
+  const later = '2026-11-13T10:00:00.000Z'
+  const outbound = { telecom: '163', unicom: '', mobile: 'CMIN2' }
+  const ipv6 = { manual: { telecom: 'V6-RETURN', unicom: '', mobile: '' }, outbound: { telecom: '', unicom: 'V6-OUT', mobile: '' } }
+  const result = manualRouteConfig(first, A, { ipv4: { manual: values, outbound }, ipv6 }, later)
+  const parsed = parseReturnRouteConfig(result)
+  expect(parsed.error).toBeNull()
+  expect(manualValues(parsed.document.nodes[A], 'outbound')).toEqual(outbound)
+  expect(manualValues(parsed.document.nodes[A], 'manual', 'ipv6')).toEqual(ipv6.manual)
+  expect(resolveOutboundRoutes(parsed.document, A).map(route => [route.carrier, route.label, route.at])).toEqual([
+    ['telecom', '163', later],
+    ['mobile', 'CMIN2', later],
+  ])
+  expect(resolveOutboundRoutes(parsed.document, A, 'ipv6').map(route => [route.carrier, route.label])).toEqual([['unicom', 'V6-OUT']])
+  const v6 = resolveReturnRoutes(parsed.document, A, true, 24, Date.parse(later), 'ipv6')
+  expect(v6.map(route => [route.carrier, route.label])).toEqual([['telecom', 'V6-RETURN'], ['unicom', '未检测'], ['mobile', '未检测']])
+  expect(parsed.document.nodes[A]!.manual.telecom).toEqual({ label: 'CN2', updatedAt: AT })
+  expect(parseReturnRouteConfig(manualRouteConfig(result, A, values, later)).document.nodes[A])
+    .toEqual(parsed.document.nodes[A])
+  expect(() => manualRouteConfig(first, A, { ipv6: { ...ipv6, outbound: { ...outbound, telecom: 'bad\u0000label' } } }, later)).toThrow()
 })
 test('legacy version zero remains readable and migrates through the existing serializer', () => {
   const raw = JSON.stringify({ version: 0, nodes: { [B]: { manual: { telecom: 'KEEP_LEGACY' } } } })

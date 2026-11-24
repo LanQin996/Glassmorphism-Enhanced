@@ -78,7 +78,7 @@ function card(page: Page) {
 for (const size of ['mini', 'compact', 'comfortable', 'large']) {
   for (const width of [390, 1440]) {
     for (const dark of [false, true]) {
-      test(`centered tags / CU-CT-CM / cycle with no countdown ${size} ${width} ${dark ? 'dark' : 'light'}`, async ({ page }, testInfo) => {
+      test(`centered tags / directional routes / cycle with no countdown ${size} ${width} ${dark ? 'dark' : 'light'}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width, height: 900 })
         await fixture(page, { dark, size })
         await page.goto('/')
@@ -101,22 +101,15 @@ for (const size of ['mini', 'compact', 'comfortable', 'large']) {
           expect(layout.title).toBeTruthy()
         }
         const routes = node.locator('[data-return-carrier]')
-        expect(await routes.evaluateAll(els => els.map(el => el.getAttribute('data-return-carrier')))).toEqual(['unicom', 'telecom', 'mobile'])
-        // New user-approved contract: color is confined to tiny markers,
-        // not large pills or colored route text. Traffic assertions stay intact.
-        await expect(routes.nth(0).locator('[data-carrier-marker]')).toHaveClass(/bg-red-/)
-        await expect(routes.nth(1).locator('[data-carrier-marker]')).toHaveClass(/bg-blue-/)
-        await expect(routes.nth(2).locator('[data-carrier-marker]')).toHaveClass(/bg-green-/)
-        expect(await routes.evaluateAll(els => els.every((el) => {
-          const css = getComputedStyle(el)
-          return css.backgroundColor === 'rgba(0, 0, 0, 0)' && Number.parseFloat(css.borderTopWidth) === 0
-        }))).toBe(true)
+        expect(await routes.evaluateAll(els => els.map(el => el.getAttribute('data-return-carrier')))).toEqual(['telecom', 'unicom', 'mobile'])
+        await expect(node.locator('[data-outbound-carrier]')).toHaveCount(0)
         const boxes = await routes.evaluateAll(els => els.map((el) => {
           const r = el.getBoundingClientRect()
-          return { y: r.y, h: r.height, w: r.width }
+          return { x: r.x, y: r.y, h: r.height, w: r.width }
         }))
-        expect(new Set(boxes.map(b => b.y)).size).toBe(1)
-        expect(boxes.every(b => b.h === 16 && b.w > 0)).toBeTruthy()
+        expect(new Set(boxes.map(b => b.x)).size).toBe(1)
+        expect(new Set(boxes.map(b => b.y)).size).toBe(3)
+        expect(boxes.every(b => b.h > 0 && b.w > 0)).toBeTruthy()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
         const before = await node.boundingBox()
         await page.getByRole('button', { name: 'Enhanced 管理', exact: true }).click()

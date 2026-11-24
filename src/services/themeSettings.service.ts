@@ -1,4 +1,4 @@
-import type { ReturnCarrier } from '@/utils/returnRouteClassification'
+import type { RouteLabelDrafts } from '@/utils/manualRouteSettings'
 import type { NodeReturnRoutes } from '@/utils/returnRoutes'
 import type { PublicInfo } from '@/utils/rpc'
 import { requirePermission } from '@/services/auth.service'
@@ -82,7 +82,7 @@ export async function saveTrafficReset(uuid: string, resetDay: number | null, ex
   })
 }
 
-export async function saveManualRoutes(uuid: string, values: Record<ReturnCarrier, string>, expectedNode: NodeReturnRoutes | undefined): Promise<PublicInfo> {
+export async function saveManualRoutes(uuid: string, values: RouteLabelDrafts, expectedNode: NodeReturnRoutes | undefined): Promise<PublicInfo> {
   return write((before) => {
     const parsed = parseReturnRouteConfig(before.returnRouteConfig)
     if (parsed.error)
